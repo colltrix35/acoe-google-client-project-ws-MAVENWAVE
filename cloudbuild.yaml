@@ -1,0 +1,112 @@
+## Access the id_github file from Secret Managers
+steps:
+- name: 'gcr.io/cloud-builders/git'
+  secretEnv: ['SSH_KEY','KNOWN_HOSTS']
+  entrypoint: 'bash'
+  args:
+  - -c
+  - |
+    echo "$$SSH_KEY" >> /root/.ssh/id_rsa
+    chmod 400 /root/.ssh/id_rsa
+    echo "$$KNOWN_HOSTS" >> /root/.ssh/known_hosts
+    
+  volumes:
+  - name: 'ssh'
+    path: /root/.ssh
+
+# gcs manupulations  
+- id: 'gcs'
+  name: 'gcr.io/cloud-builders/gsutil'
+  entrypoint: 'sh'
+  args: 
+  - '-c'
+  - |
+     git clone git@github.com:acxiomanalyticsgcp/acoe-google-client-project-ws.git
+     apt update -y
+     apt install python-pip -y
+     apt-get install python-jinja2 -y
+     pip install Jinja2
+     python backend.py
+     cd acoe-google-client-project-ws
+     git config --global user.name colltrix35
+     git config --global user.email colltrix35@gmail.com
+     git add .
+     git commit -m "Updated with build ${BUILD_ID} from ${REPO_NAME} commit ${COMMIT_SHA}"
+     git push 
+     cd ..
+     rm -r acoe-google-client-project-ws
+  volumes:
+  - name: 'ssh'
+    path: /root/.ssh
+# gcs manupulations  end
+
+# terraform init   
+- id: 'tf init'
+  name: 'hashicorp/terraform:0.15.1'
+  entrypoint: 'sh'
+  args: 
+  - '-c'
+  - |
+      terraform init
+  volumes:
+  - name: 'ssh'
+    path: /root/.ssh
+# terraform init  end 
+
+# terraform plan   
+- id: 'tf plan'
+  name: 'hashicorp/terraform:0.15.1'
+  entrypoint: 'sh'
+  args: 
+  - '-c'
+  - |
+      terraform plan -var-file="tfvars/client/team-managed-project.tfvars"
+  volumes:
+  - name: 'ssh'
+    path: /root/.ssh
+# terraform plan end 
+
+# terraform apply   
+- id: 'tf apply'
+  name: 'hashicorp/terraform:0.15.1'
+  entrypoint: 'sh'
+  args: 
+  - '-c'
+  - |
+      terraform apply -auto-approve -var-file="tfvars/client/team-managed-project.tfvars" 
+  volumes:
+  - name: 'ssh'
+    path: /root/.ssh
+    
+# create a new repo
+- id: 'create new repo'
+  name: 'gcr.io/cloud-builders/gsutil'
+  entrypoint: 'sh'
+  args: 
+  - '-c'
+  - |
+      chmod +x create-repo.sh
+      ./create-repo.sh
+  volumes:
+  - name: 'ssh'
+    path: /root/.ssh
+# end create new repo ok
+
+
+# Clone the repository
+- name: 'gcr.io/cloud-builders/git'
+  args:
+  - clone
+  - --recurse-submodules
+  - git@github.com:acxiomanalyticsgcp/acoe-google-client-project-ws.git
+  volumes:
+  - name: 'ssh'
+    path: /root/.ssh
+
+availableSecrets:
+  secretManager:
+  - versionName: projects/analytics-terraform/secrets/github-ssh-secret/versions/latest
+    env: 'SSH_KEY'
+  - versionName: projects/analytics-terraform/secrets/github_known_hosts/versions/latest
+    env: 'KNOWN_HOSTS'
+timeout: 6600s
